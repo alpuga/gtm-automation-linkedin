@@ -1,7 +1,8 @@
 .env
 linkedin_session.json
-processed_leads.csv
-screenshots/
 .venv/
 __pycache__/
 *.pyc
+
+# Runtime data — never commit
+data/
