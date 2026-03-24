@@ -1,10 +1,16 @@
 # GTM Automation — LinkedIn
 
-Pulls contacted leads from [Instantly](https://instantly.ai) and automates LinkedIn outreach via Playwright:
+Pulls contacted leads from [Instantly](https://instantly.ai) and automates LinkedIn engagement via Playwright.
 
-- **Not connected** → sends a connection request with a personalized note
-- **Already connected** → sends a direct message
-- **Pending / unknown** → skips
+**Outreach workflow:**
+- Not connected → send connection request with a personalized note
+- Already connected → send direct message
+- Pending / other → skip
+
+**Status workflow (run 5–7 days after outreach):**
+- Accepted (1st degree) → send follow-up DM
+- Still pending → log as pending
+- Ignored / expired → log as ignored
 
 ---
 
@@ -23,10 +29,7 @@ poetry run playwright install chromium
 
 **2. Configure environment**
 
-Copy `.env` and fill in your Instantly API key:
-```bash
-cp .env .env.local  # optional, or just edit .env directly
-```
+Create a `.env` file:
 ```
 INSTANTLY_API_KEY=your_key_here
 LINKEDIN_SESSION_FILE=linkedin_session.json
@@ -34,57 +37,87 @@ LINKEDIN_SESSION_FILE=linkedin_session.json
 
 **3. Save your LinkedIn session (one-time)**
 
-This opens a real browser so you can log in manually:
+Opens a real browser so you can log in manually:
 ```bash
 poetry run python setup_session.py
 ```
-Your session is saved to `linkedin_session.json`. Keep this file private — it grants access to your LinkedIn account.
+
+Your session is saved to `linkedin_session.json`. Keep this file private — it grants full access to your LinkedIn account.
 
 ---
 
 ## Usage
 
 ```bash
-poetry run python main.py
+# Send connection requests and DMs to new leads
+poetry run python run.py outreach
+
+# Check invite statuses and send follow-up DMs to accepted connections
+poetry run python run.py status
+
+# Print a summary of all activity
+poetry run python run.py report
 ```
 
-The script will:
-1. Fetch all leads from Instantly that have been sent at least one email
-2. Visit each lead's LinkedIn profile
-3. Send a connection request or direct message based on their connection status
-4. Log the result per lead (`connected` / `messaged` / `skipped` / `error`)
+**Options:**
+```bash
+poetry run python run.py outreach --dry-run              # detect states, send nothing
+poetry run python run.py outreach --profile <url> --dry-run  # test a single profile
+poetry run python run.py outreach --reset-today          # reset daily limit
+poetry run python run.py status --dry-run
+```
 
 ---
 
 ## Message Templates
 
-Edit the templates at the top of `main.py`:
+All message templates live in `config.py`:
 
-```python
-CONNECT_NOTE = "Hi {first_name}, I noticed we've been in touch via email — I'd love to connect here too!"
-DM_TEXT = "Hi {first_name}, great to be connected! Wanted to follow up on the email we sent over recently."
-```
+| Constant | When it's sent |
+|---|---|
+| `CONNECT_NOTE` | With the connection request |
+| `DM_TEXT` | To leads already connected (1st degree) |
+| `FOLLOW_UP_DM` | When a connection request is accepted |
 
-`{first_name}` is interpolated from the lead's data in Instantly.
+`{first_name}` is interpolated from the lead's Instantly data.
 
 ---
 
 ## Project Structure
 
 ```
-.
-├── .env                  # API key and config (not committed)
-├── linkedin_session.json # Saved browser session (not committed)
-├── setup_session.py      # One-time LinkedIn login
-├── main.py               # Main automation script
-└── pyproject.toml        # Dependencies (Poetry)
+config.py              ← message templates, limits, file paths
+run.py                 ← CLI entry point
+setup_session.py       ← one-time LinkedIn login
+
+linkedin/              ← browser automation (no business logic)
+  browser.py           ← launch browser with anti-detection settings
+  connect.py           ← connection request sending + state detection
+  message.py           ← DM sending with connection degree check
+  scraper.py           ← scrape pending invitations page
+  utils.py             ← shared page helpers
+
+crm/                   ← data layer (no Playwright)
+  base.py              ← abstract interfaces (LeadSource, ActivityLogger)
+  instantly.py         ← Instantly API client
+  leads.py             ← activity_log.csv read/write
+
+workflows/             ← orchestration (imports from linkedin/ and crm/)
+  outreach.py          ← send connection requests and DMs
+  check_status.py      ← check invite statuses, send follow-up DMs
+  report.py            ← print activity summary
+
+data/                  ← runtime artifacts (gitignored)
+  activity_log.csv     ← record of all LinkedIn actions taken
+  leads.csv            ← lead data synced from Instantly/HubSpot
+  screenshots/         ← debug screenshots on errors
 ```
 
 ---
 
 ## Notes
 
-- LinkedIn has no public API — this uses Playwright to automate the browser.
-- A random 3–7 second delay is added between each profile to reduce detection risk.
-- Re-running the script will re-process all contacted leads. A processed-leads log can be added to avoid duplicates.
-- `linkedin_session.json` and `.env` should be added to `.gitignore`.
+- LinkedIn has no public API — this automates a real browser via Playwright.
+- Random delays are added between profiles to reduce detection risk.
+- The degree check in `linkedin/message.py` ensures follow-up DMs are never sent as InMails — only 1st-degree connections receive them.
+- `linkedin_session.json`, `.env`, and `data/` are gitignored.
