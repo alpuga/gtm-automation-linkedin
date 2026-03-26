@@ -26,18 +26,33 @@ def scrape_pending_vanity_names(page) -> set[str]:
     if "linkedin.com/login" in page.url or "linkedin.com/authwall" in page.url:
         raise RuntimeError("session-expired")
 
-    # Scroll to load all invitations (infinite scroll)
+    # Scroll to load all invitations (infinite scroll).
+    # Require two consecutive stable counts before stopping.
+    INVITE_CARD_SELECTOR = "a[href*='/in/']"
+    stable_rounds = 0
     prev_count = 0
-    for _ in range(50):
+    for _ in range(100):
         page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        page.wait_for_timeout(2000)
-        current_count = len(page.locator("a[href*='/in/']").all())
+        page.wait_for_timeout(3000)
+        current_count = len(page.locator(INVITE_CARD_SELECTOR).all())
         if current_count == prev_count:
-            break
+            stable_rounds += 1
+            if stable_rounds >= 2:
+                break
+        else:
+            stable_rounds = 0
         prev_count = current_count
 
+    # Dump page HTML for selector debugging when DEBUG_HTML is set
+    import os
+    if os.getenv("DEBUG_HTML"):
+        os.makedirs("data/screenshots", exist_ok=True)
+        with open("data/screenshots/_pending_page.html", "w") as f:
+            f.write(page.content())
+        print(f"  [debug] raw a[href*='/in/'] count: {len(page.locator(INVITE_CARD_SELECTOR).all())}")
+
     pending = set()
-    for link in page.locator("a[href*='/in/']").all():
+    for link in page.locator(INVITE_CARD_SELECTOR).all():
         href = link.get_attribute("href") or ""
         vanity = extract_vanity_from_url(href)
         if vanity:

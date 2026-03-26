@@ -5,6 +5,7 @@ import httpx
 from dotenv import load_dotenv
 
 from crm.base import LeadSource
+from crm import db
 
 load_dotenv()
 
@@ -18,7 +19,7 @@ class InstantlyClient(LeadSource):
         self.headers = {"Authorization": f"Bearer {self.api_key}"}
 
     def fetch_leads(self) -> list[dict]:
-        """Fetch all contacted leads, sorted by last contact date."""
+        """Fetch all contacted leads from Instantly, sorted by last contact date."""
         leads = []
         starting_after = None
 
@@ -40,9 +41,26 @@ class InstantlyClient(LeadSource):
         leads.sort(key=lambda l: l.get("timestamp_last_contact", ""), reverse=True)
         return leads
 
-    def fetch_leads_by_email(self) -> dict[str, dict]:
-        """Return {email: lead_dict} for all contacted leads."""
-        return {lead["email"]: lead for lead in self.fetch_leads()}
+    def sync_leads(self):
+        """
+        Pull all contacted leads from Instantly and upsert into the leads table.
+        Never overwrites linkedin_status — only updates contact info.
+        """
+        db.init_db()
+        leads = self.fetch_leads()
+        for lead in leads:
+            email = lead.get("email")
+            if not email:
+                continue
+            db.upsert_lead(
+                email=email,
+                first_name=lead.get("first_name") or lead.get("firstName"),
+                last_name=lead.get("last_name") or lead.get("lastName"),
+                linkedin_url=extract_linkedin_url(lead),
+                company=lead.get("company") or lead.get("companyName"),
+                source="instantly",
+            )
+        print(f"Synced {len(leads)} lead(s) from Instantly.")
 
 
 def extract_linkedin_url(lead: dict) -> str | None:
@@ -55,10 +73,3 @@ def extract_linkedin_url(lead: dict) -> str | None:
     if val and "linkedin.com" in val:
         return val.strip()
     return None
-
-
-def get_first_name(email: str, leads_by_email: dict) -> str:
-    lead = leads_by_email.get(email)
-    if not lead:
-        return "there"
-    return lead.get("first_name") or lead.get("firstName") or "there"

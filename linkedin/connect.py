@@ -7,6 +7,37 @@ from config import CONNECT_NOTE
 from linkedin.utils import find_profile_action
 
 
+def is_pending(page) -> bool:
+    """
+    Return True if there is a pending outbound invite to the person on the current profile page.
+    Checks for a direct 'Pending' button or a 'Withdraw' option in the More dropdown.
+    """
+    profile_card = page.locator("section[componentkey*='Topcard']")
+
+    if find_profile_action(profile_card, "Pending"):
+        return True
+
+    more_btn = find_profile_action(profile_card, "More")
+    if more_btn:
+        try:
+            more_btn.click()
+            page.wait_for_timeout(800)
+            withdraw = page.get_by_role("menuitem", name="Withdraw")
+            try:
+                if withdraw.first.is_visible(timeout=2000):
+                    page.keyboard.press("Escape")
+                    page.wait_for_timeout(500)
+                    return True
+            except PlaywrightTimeoutError:
+                pass
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
+        except PlaywrightTimeoutError:
+            pass
+
+    return False
+
+
 def detect_connection_state(page, linkedin_url: str) -> str:
     """
     Detect connection state using LinkedIn's custom-invite URL redirect behavior.
@@ -15,9 +46,7 @@ def detect_connection_state(page, linkedin_url: str) -> str:
       'pending' | 'not_connected' | 'connected' | 'out_of_network' | 'disabled' |
       'session_expired' | 'error'
     """
-    profile_card = page.locator("section[componentkey*='Topcard']")
-
-    if find_profile_action(profile_card, "Pending"):
+    if is_pending(page):
         return "pending"
 
     vanity = page.url.rstrip("/").split("/")[-1]

@@ -8,9 +8,9 @@ Pulls contacted leads from [Instantly](https://instantly.ai) and automates Linke
 - Pending / other → skip
 
 **Status workflow (run 5–7 days after outreach):**
-- Accepted (1st degree) → send follow-up DM
-- Still pending → log as pending
-- Ignored / expired → log as ignored
+- Accepted (1st degree) → send follow-up DM, log as `accepted`
+- Still pending → log as `pending`
+- Ignored / expired → log as `ignored`
 
 ---
 
@@ -44,11 +44,24 @@ poetry run python setup_session.py
 
 Your session is saved to `linkedin_session.json`. Keep this file private — it grants full access to your LinkedIn account.
 
+**4. Initialize the database and sync leads (first time)**
+
+```bash
+# If migrating from the old CSV-based setup:
+poetry run python migrate_csv_to_db.py
+
+# Pull lead contact info from Instantly into the database:
+poetry run python run.py sync
+```
+
 ---
 
 ## Usage
 
 ```bash
+# Pull latest leads from Instantly into the database
+poetry run python run.py sync
+
 # Send connection requests and DMs to new leads
 poetry run python run.py outreach
 
@@ -61,11 +74,17 @@ poetry run python run.py report
 
 **Options:**
 ```bash
-poetry run python run.py outreach --dry-run              # detect states, send nothing
+poetry run python run.py outreach --dry-run                  # detect states, send nothing
 poetry run python run.py outreach --profile <url> --dry-run  # test a single profile
-poetry run python run.py outreach --reset-today          # reset daily limit
+poetry run python run.py outreach --reset-today              # reset daily limit
 poetry run python run.py status --dry-run
+poetry run python run.py status --limit 5                    # test against first 5 leads
 ```
+
+**Typical weekly rhythm:**
+- Run `sync` + `outreach` daily (up to 50 leads/day)
+- Run `status` once or twice a week to follow up on acceptances
+- Run `report` for a snapshot at any time
 
 ---
 
@@ -79,7 +98,7 @@ All message templates live in `config.py`:
 | `DM_TEXT` | To leads already connected (1st degree) |
 | `FOLLOW_UP_DM` | When a connection request is accepted |
 
-`{first_name}` is interpolated from the lead's Instantly data.
+`{first_name}` is interpolated from the lead's data in the database.
 
 ---
 
@@ -89,18 +108,20 @@ All message templates live in `config.py`:
 config.py              ← message templates, limits, file paths
 run.py                 ← CLI entry point
 setup_session.py       ← one-time LinkedIn login
+migrate_csv_to_db.py   ← one-time migration from legacy CSV
 
 linkedin/              ← browser automation (no business logic)
   browser.py           ← launch browser with anti-detection settings
   connect.py           ← connection request sending + state detection
   message.py           ← DM sending with connection degree check
-  scraper.py           ← scrape pending invitations page
+  scraper.py           ← pending invitations page scraper (utility)
   utils.py             ← shared page helpers
 
 crm/                   ← data layer (no Playwright)
   base.py              ← abstract interfaces (LeadSource, ActivityLogger)
+  db.py                ← SQLite layer (leads + activity_log tables)
   instantly.py         ← Instantly API client
-  leads.py             ← activity_log.csv read/write
+  leads.py             ← data access interface used by workflows
 
 workflows/             ← orchestration (imports from linkedin/ and crm/)
   outreach.py          ← send connection requests and DMs
@@ -108,8 +129,8 @@ workflows/             ← orchestration (imports from linkedin/ and crm/)
   report.py            ← print activity summary
 
 data/                  ← runtime artifacts (gitignored)
-  activity_log.csv     ← record of all LinkedIn actions taken
-  leads.csv            ← lead data synced from Instantly/HubSpot
+  leads.db             ← SQLite database (leads + activity history)
+  activity_log.csv     ← legacy CSV (kept for reference)
   screenshots/         ← debug screenshots on errors
 ```
 
