@@ -14,14 +14,14 @@ import random
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 import config
-from crm.instantly import InstantlyClient
 from crm import leads as activity_log
 from linkedin.browser import launch_browser
 from linkedin.connect import is_pending
+from linkedin.inbox import get_accepted_leads
 from linkedin.message import send_follow_up_dm
 
 
-def run(dry_run: bool = False, preview: bool = False, limit: int = None, profile_url: str = None):
+def run(dry_run: bool = False, preview: bool = False, limit: int = None, profile_url: str = None, inbox: bool = False):
     if dry_run:
         print("--- DRY RUN MODE ---\n")
 
@@ -42,14 +42,29 @@ def run(dry_run: bool = False, preview: bool = False, limit: int = None, profile
             return
         print(f"Found {len(invite_sent_leads)} invite_sent lead(s) to check.")
 
-    if limit:
-        invite_sent_leads = dict(list(invite_sent_leads.items())[:limit])
-        print(f"Limiting to {limit} lead(s) for this run.")
-
-    total = len(invite_sent_leads)
-
     with sync_playwright() as p:
         browser, _context, page = launch_browser(p)
+
+        if inbox and not profile_url:
+            print("Scanning inbox for accepted connections...")
+            leads_with_names = activity_log.load_invite_sent_leads_with_names()
+            matched = get_accepted_leads(page, leads_with_names)
+            if "__session_expired__" in matched:
+                print("Session expired. Re-run setup_session.py.")
+                browser.close()
+                return
+            print(f"{len(matched)} lead(s) found in inbox (accepted).")
+            if not matched:
+                browser.close()
+                print("\nDone.")
+                return
+            invite_sent_leads = matched
+
+        if limit:
+            invite_sent_leads = dict(list(invite_sent_leads.items())[:limit])
+            print(f"Limiting to {limit} lead(s) for this run.")
+
+        total = len(invite_sent_leads)
 
         for i, (email, linkedin_url) in enumerate(invite_sent_leads.items(), 1):
             print(f"[{i}/{total}] {email} ... ", end="", flush=True)

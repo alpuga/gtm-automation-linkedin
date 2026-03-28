@@ -14,6 +14,10 @@ def load_invite_sent_leads() -> dict[str, str]:
     return db.load_invite_sent_leads()
 
 
+def load_invite_sent_leads_with_names() -> dict[str, dict]:
+    return db.load_invite_sent_leads_with_names()
+
+
 def count_processed_today() -> int:
     return db.count_processed_today()
 

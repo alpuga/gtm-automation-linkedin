@@ -8,9 +8,14 @@ Pulls contacted leads from [Instantly](https://instantly.ai) and automates Linke
 - Pending / other → skip
 
 **Status workflow (run 5–7 days after outreach):**
-- Accepted (1st degree) → send follow-up DM, log as `accepted`
+- Accepted (1st degree) → send follow-up DM, log as `dm_sent`
 - Still pending → log as `pending`
 - Ignored / expired → log as `ignored`
+
+**Sales Navigator InMail workflow:**
+- Scrapes a saved Sales Navigator people list
+- Sends InMails to new leads, skipping anyone already in the database
+- Logs activity as `inmail_sent`
 
 ---
 
@@ -78,13 +83,19 @@ poetry run python run.py outreach --dry-run                  # detect states, se
 poetry run python run.py outreach --profile <url> --dry-run  # test a single profile
 poetry run python run.py outreach --reset-today              # reset daily limit
 poetry run python run.py status --dry-run
+poetry run python run.py status --inbox                      # faster: scan inbox to find acceptances instead of visiting each profile
+poetry run python run.py status --inbox --dry-run
 poetry run python run.py status --limit 5                    # test against first 5 leads
+poetry run python run.py inmail --list <sales_nav_list_url>  # send InMails from a Sales Navigator list
+poetry run python run.py inmail --list <url> --dry-run
+poetry run python run.py inmail --list <url> --preview --limit 1
 ```
 
 **Typical weekly rhythm:**
-- Run `sync` + `outreach` daily (up to 50 leads/day)
-- Run `status` once or twice a week to follow up on acceptances
+- Run `sync` + `outreach` daily (up to 40 leads/day)
+- Run `status --inbox` once or twice a week to follow up on acceptances
 - Run `report` for a snapshot at any time
+- Run `inmail` separately for cold Sales Navigator outreach (10/day limit)
 
 ---
 
@@ -97,6 +108,8 @@ All message templates live in `config.py`:
 | `CONNECT_NOTE` | With the connection request |
 | `DM_TEXT` | To leads already connected (1st degree) |
 | `FOLLOW_UP_DM` | When a connection request is accepted |
+| `INMAIL_SUBJECT` | Subject line for Sales Navigator InMails |
+| `INMAIL_BODY` | Body for Sales Navigator InMails |
 
 `{first_name}` is interpolated from the lead's data in the database.
 
@@ -113,7 +126,10 @@ migrate_csv_to_db.py   ← one-time migration from legacy CSV
 linkedin/              ← browser automation (no business logic)
   browser.py           ← launch browser with anti-detection settings
   connect.py           ← connection request sending + state detection
+  inbox.py             ← inbox scraper for finding accepted connections
+  inmail.py            ← Sales Navigator InMail sending
   message.py           ← DM sending with connection degree check
+  sales_nav.py         ← Sales Navigator list scraper
   scraper.py           ← pending invitations page scraper (utility)
   utils.py             ← shared page helpers
 
@@ -126,6 +142,7 @@ crm/                   ← data layer (no Playwright)
 workflows/             ← orchestration (imports from linkedin/ and crm/)
   outreach.py          ← send connection requests and DMs
   check_status.py      ← check invite statuses, send follow-up DMs
+  sales_nav_outreach.py ← scrape Sales Navigator list and send InMails
   report.py            ← print activity summary
 
 data/                  ← runtime artifacts (gitignored)
@@ -141,4 +158,6 @@ data/                  ← runtime artifacts (gitignored)
 - LinkedIn has no public API — this automates a real browser via Playwright.
 - Random delays are added between profiles to reduce detection risk.
 - The degree check in `linkedin/message.py` ensures follow-up DMs are never sent as InMails — only 1st-degree connections receive them.
+- `status --inbox` matches accepted connections by full name from the inbox conversation list, which is faster than visiting each profile individually.
+- Sales Navigator InMail leads are stored with a synthetic email key (`sn_{slug}@salesnav.local`) since they have no real email in the DB.
 - `linkedin_session.json`, `.env`, and `data/` are gitignored.

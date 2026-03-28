@@ -18,7 +18,8 @@ VALID_STATUSES = {
     "pending",
     "accepted",
     "ignored",
-    "messaged",
+    "dm_sent",
+    "inmail_sent",
 }
 
 
@@ -119,6 +120,31 @@ def log_activity(email: str, result: str):
             """, (status, now, email))
 
 
+def load_invite_sent_leads_with_names() -> dict[str, dict]:
+    """
+    Return invite_sent/pending leads with their names for inbox matching.
+    {email: {linkedin_url, first_name, last_name}}
+    """
+    from config import MIN_DM_WAIT_DAYS
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT email, linkedin_url, first_name, last_name FROM leads
+            WHERE linkedin_status IN ('invite_sent', 'pending')
+            AND linkedin_url IS NOT NULL AND linkedin_url != ''
+            AND (last_action_at IS NULL OR last_action_at <= datetime('now', :wait))
+            ORDER BY last_action_at ASC
+        """, {"wait": f"-{MIN_DM_WAIT_DAYS} days"}).fetchall()
+    return {
+        row["email"]: {
+            "linkedin_url": row["linkedin_url"],
+            "first_name": row["first_name"] or "",
+            "last_name": row["last_name"] or "",
+        }
+        for row in rows
+    }
+
+
 def load_invite_sent_leads() -> dict[str, str]:
     """
     Return {email: linkedin_url} for leads still awaiting a response (invite_sent or pending),
@@ -148,12 +174,27 @@ def load_processed_emails() -> set[str]:
 
 
 def count_processed_today() -> int:
-    """Count activity log entries from today."""
+    """Count connection requests (invite_sent) sent today, using local date."""
+    init_db()
+    today = datetime.now().date().isoformat()  # local date
+    with get_connection() as conn:
+        row = conn.execute("""
+            SELECT COUNT(*) as n FROM activity_log
+            WHERE result = 'invite_sent'
+            AND DATE(timestamp, 'localtime') = ?
+        """, (today,)).fetchone()
+    return row["n"] if row else 0
+
+
+def count_inmails_today() -> int:
+    """Count InMails sent today, using local date."""
     init_db()
     today = datetime.now().date().isoformat()
     with get_connection() as conn:
         row = conn.execute("""
-            SELECT COUNT(*) as n FROM activity_log WHERE timestamp >= ?
+            SELECT COUNT(*) as n FROM activity_log
+            WHERE result = 'inmail_sent'
+            AND DATE(timestamp, 'localtime') = ?
         """, (today,)).fetchone()
     return row["n"] if row else 0
 
@@ -207,10 +248,12 @@ def _result_to_status(result: str) -> str | None:
         return "invite_sent"
     if result == "accepted":
         return "accepted"
-    if result == "messaged":
-        return "messaged"
+    if result == "dm_sent":
+        return "dm_sent"
     if result == "pending":
         return "pending"
+    if result == "inmail_sent":
+        return "inmail_sent"
     if result and result.startswith("ignored"):
         return "ignored"
     return None

@@ -18,6 +18,7 @@ ACTIVITY_LOG = "data/activity_log.csv"  # legacy CSV — used by migration scrip
 
 # --- Limits ---
 DAILY_LIMIT = 40
+INMAIL_DAILY_LIMIT = 10     # conservative — Sales Navigator gives ~50 credits/month
 POST_RECENCY_DAYS = 60      # only engage with posts newer than this
 MIN_DM_WAIT_DAYS = 1        # minimum days to wait after invite before sending follow-up DM
 
@@ -25,7 +26,7 @@ MIN_DM_WAIT_DAYS = 1        # minimum days to wait after invite before sending f
 
 # Step 1 — sent with connection request (outreach workflow)
 CONNECT_NOTE = (
-    "Hi {first_name}, sent you an email about taking care of all your merch needs. "
+    "Hi {first_name}, sent you an email about being your go-to guy for anything merch. "
     "Wanted to connect here to put a face to the name."
 )
 
@@ -37,9 +38,21 @@ DM_TEXT = (
     "Happy to put together some mockups for you guys."
 )
 
+# Sales Navigator InMail — sent to cold prospects via sales_nav_outreach workflow
+INMAIL_SUBJECT = "Quick question about merch"
+
+INMAIL_BODY = (
+    "Hi {first_name}, hope you don't mind the cold outreach!\n\n"
+    "I help companies like yours create branded merch — from swag bags to event kits — "
+    "without the usual headaches.\n\n"
+    "Would love to put together some mockups for you guys if there's any interest. "
+    "Happy to keep it quick!\n\n"
+    "Alex"
+)
+
 # Step 3 — sent when a connection request is accepted (check_status workflow)
 FOLLOW_UP_DM = (
     "Hi {first_name}, great connecting!\n\n"
     "I emailed you recently about merch, wanted to make sure it didn't slip through the cracks.\n\n"
-    "If someone else owns this, I'd love an intro. I can put together some mockups for you guys to check out."
+    "I also understand I might be messaging the wrong person. Does merch fall under your responsibility, or should I be in touch with someone else?"
 )

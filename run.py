@@ -23,6 +23,14 @@ def main():
     p_status.add_argument("--preview", action="store_true", help="Fill message in compose box but do not send")
     p_status.add_argument("--limit", type=int, help="Only check this many leads (useful for testing)")
     p_status.add_argument("--profile", type=str, help="Test against a single LinkedIn profile URL")
+    p_status.add_argument("--inbox", action="store_true", help="Scan inbox to find accepted connections instead of visiting each profile")
+
+    # inmail
+    p_inmail = sub.add_parser("inmail", help="Scrape a Sales Navigator list and send InMails")
+    p_inmail.add_argument("--list", required=True, type=str, help="Sales Navigator people list URL")
+    p_inmail.add_argument("--dry-run", action="store_true", help="Detect leads but send nothing")
+    p_inmail.add_argument("--preview", action="store_true", help="Fill InMail compose but do not send")
+    p_inmail.add_argument("--limit", type=int, help="Only process this many leads")
 
     # sync
     sub.add_parser("sync", help="Pull latest leads from Instantly into the database")
@@ -38,7 +46,11 @@ def main():
 
     elif args.command == "status":
         from workflows.check_status import run
-        run(dry_run=args.dry_run, preview=args.preview, limit=args.limit, profile_url=args.profile)
+        run(dry_run=args.dry_run, preview=args.preview, limit=args.limit, profile_url=args.profile, inbox=args.inbox)
+
+    elif args.command == "inmail":
+        from workflows.sales_nav_outreach import run
+        run(list_url=args.list, dry_run=args.dry_run, preview=args.preview, limit=args.limit)
 
     elif args.command == "sync":
         from crm.instantly import InstantlyClient

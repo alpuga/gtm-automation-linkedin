@@ -38,8 +38,10 @@ def send_dm(page, message_btn, first_name: str, template: str, preview: bool = F
     ):
         el = page.locator(selector)
         try:
-            if el.first.is_visible(timeout=4000):
-                compose = el.first
+            # Use .last — if a previous conversation panel is still open,
+            # the newly opened compose box will be the last one in the DOM
+            if el.last.is_visible(timeout=4000):
+                compose = el.last
                 break
         except PlaywrightTimeoutError:
             continue
@@ -52,16 +54,41 @@ def send_dm(page, message_btn, first_name: str, template: str, preview: bool = F
 
     try:
         msg = template.format(first_name=first_name)
-        compose.click()
+        # focus() bypasses Playwright's actionability checks — avoids timeout
+        # on modals that are visible but still animating open
+        compose.focus()
         page.wait_for_timeout(500)
-        # Use keyboard.type for contenteditable divs — more reliable than fill()
         page.keyboard.type(msg, delay=20)
         page.wait_for_timeout(500)
         if preview:
             input("  → Message ready. Press Enter here to continue (message will NOT be sent)...")
             return "preview (not sent)"
-        page.keyboard.press("Enter")
-        return "messaged"
+
+        # Click the Send button — more reliable than pressing Enter
+        send_btn = None
+        for selector in (
+            "button.msg-form__send-button",
+            "button[aria-label='Send']",
+            "button:has-text('Send')",
+        ):
+            el = page.locator(selector)
+            try:
+                if el.first.is_visible(timeout=2000):
+                    send_btn = el.first
+                    break
+            except PlaywrightTimeoutError:
+                continue
+
+        if send_btn:
+            send_btn.click()
+        else:
+            # Fallback to Enter if the button isn't found
+            page.keyboard.press("Enter")
+
+        page.wait_for_timeout(1000)
+        # Close the messaging panel so the next profile starts with a clean DOM
+        page.keyboard.press("Escape")
+        return "dm_sent"
     except PlaywrightTimeoutError:
         return "error (message compose timeout)"
 
@@ -105,6 +132,4 @@ def send_follow_up_dm(page, linkedin_url: str, first_name: str, dry_run: bool, p
     if dry_run:
         return "dry-run: would send follow-up DM"
 
-    result = send_dm(page, message_btn, first_name, FOLLOW_UP_DM, preview=preview)
-    # Remap generic "messaged" to "accepted" to distinguish from outreach DMs
-    return "accepted" if result == "messaged" else result
+    return send_dm(page, message_btn, first_name, FOLLOW_UP_DM, preview=preview)
