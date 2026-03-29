@@ -27,7 +27,8 @@ def main():
 
     # inmail
     p_inmail = sub.add_parser("inmail", help="Scrape a Sales Navigator list and send InMails")
-    p_inmail.add_argument("--list", required=True, type=str, help="Sales Navigator people list URL")
+    p_inmail.add_argument("--list", type=str, help="Sales Navigator people list URL")
+    p_inmail.add_argument("--profile", type=str, help="Test against a single Sales Navigator profile URL")
     p_inmail.add_argument("--dry-run", action="store_true", help="Detect leads but send nothing")
     p_inmail.add_argument("--preview", action="store_true", help="Fill InMail compose but do not send")
     p_inmail.add_argument("--limit", type=int, help="Only process this many leads")
@@ -50,7 +51,10 @@ def main():
 
     elif args.command == "inmail":
         from workflows.sales_nav_outreach import run
-        run(list_url=args.list, dry_run=args.dry_run, preview=args.preview, limit=args.limit)
+        if not args.list and not args.profile:
+            print("Error: provide --list <url> or --profile <url>")
+        else:
+            run(list_url=args.list, dry_run=args.dry_run, preview=args.preview, limit=args.limit, profile_url=args.profile)
 
     elif args.command == "sync":
         from crm.instantly import InstantlyClient

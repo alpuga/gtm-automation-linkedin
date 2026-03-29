@@ -39,15 +39,14 @@ DM_TEXT = (
 )
 
 # Sales Navigator InMail — sent to cold prospects via sales_nav_outreach workflow
-INMAIL_SUBJECT = "Quick question about merch"
+INMAIL_SUBJECT = "Normally hate InMails, but..."
 
 INMAIL_BODY = (
-    "Hi {first_name}, hope you don't mind the cold outreach!\n\n"
-    "I help companies like yours create branded merch — from swag bags to event kits — "
+    "Hi {first_name}, I thought sending you an Inmail would be worth it.\n\n"
+    "I help companies like yours create branded merch, from swag bags to event kits, "
     "without the usual headaches.\n\n"
     "Would love to put together some mockups for you guys if there's any interest. "
     "Happy to keep it quick!\n\n"
-    "Alex"
 )
 
 # Step 3 — sent when a connection request is accepted (check_status workflow)

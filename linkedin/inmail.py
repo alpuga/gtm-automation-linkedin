@@ -13,47 +13,55 @@ def send_inmail(
     first_name: str,
     dry_run: bool = False,
     preview: bool = False,
-) -> str:
+) -> dict:
     """
     Navigate to a Sales Navigator profile page and send an InMail.
-    Returns a result string suitable for activity logging.
+    Returns a dict: {result, linkedin_url, email}
+    - linkedin_url: /in/ URL if LinkedIn exposes it on the page, else ''
+    - email: public email if listed in contact info section, else ''
     """
+    def _ret(result):
+        return {"result": result, "linkedin_url": "", "email": ""}
+
     try:
         page.goto(sales_nav_url, wait_until="domcontentloaded", timeout=30_000)
         page.wait_for_timeout(random.randint(2000, 3500))
     except PlaywrightTimeoutError:
-        return "error (page load timeout)"
+        return _ret("error (page load timeout)")
 
     if "linkedin.com/login" in page.url or "linkedin.com/authwall" in page.url:
-        return "session_expired"
+        return _ret("session_expired")
+
+    # Extract contact info while we're on the profile page
+    linkedin_url = _extract_linkedin_url(page)
+    email = _extract_email(page)
 
     if os.getenv("DEBUG_HTML"):
         os.makedirs("data/screenshots", exist_ok=True)
         slug = sales_nav_url.rstrip("/").split("/")[-1]
         with open(f"data/screenshots/{slug}_sales_nav_profile.html", "w") as f:
             f.write(page.content())
+        print(f"  [debug] linkedin_url={linkedin_url!r} email={email!r}")
 
-    # Find the Message / InMail button on the Sales Nav profile
+    # Wait for the Message / InMail button to be ready
     message_btn = None
     for selector in (
-        "button[data-view-name='lead-cta-send-inmail']",
-        "button[data-control-name='send_inmail']",
+        "button[data-anchor-send-inmail]",
         "button[aria-label*='Message']",
         "button:has-text('Message')",
     ):
-        el = page.locator(selector)
         try:
-            if el.first.is_visible(timeout=2000):
-                message_btn = el.first
-                break
+            page.wait_for_selector(selector, state="visible", timeout=5000)
+            message_btn = page.locator(selector).first
+            break
         except PlaywrightTimeoutError:
             continue
 
     if message_btn is None:
-        return "error (message button not found)"
+        return {"result": "error (message button not found)", "linkedin_url": linkedin_url, "email": email}
 
     if dry_run:
-        return "dry-run: would send InMail"
+        return {"result": "dry-run: would send InMail", "linkedin_url": linkedin_url, "email": email}
 
     message_btn.click()
     page.wait_for_timeout(2500)
@@ -96,16 +104,16 @@ def send_inmail(
             continue
 
     if body_field is None:
-        return "error (inmail body not found)"
+        return {"result": "error (inmail body not found)", "linkedin_url": linkedin_url, "email": email}
 
-    body_field.click()
+    body_field.focus()
     page.wait_for_timeout(300)
     page.keyboard.type(INMAIL_BODY.format(first_name=first_name), delay=20)
     page.wait_for_timeout(500)
 
     if preview:
         input("  → InMail ready. Press Enter here to continue (will NOT be sent)...")
-        return "preview (not sent)"
+        return {"result": "preview (not sent)", "linkedin_url": linkedin_url, "email": email}
 
     # Send button
     send_btn = None
@@ -123,8 +131,54 @@ def send_inmail(
             continue
 
     if send_btn is None:
-        return "error (send button not found)"
+        return {"result": "error (send button not found)", "linkedin_url": linkedin_url, "email": email}
 
     send_btn.click()
     page.wait_for_timeout(1500)
-    return "inmail_sent"
+    return {"result": "inmail_sent", "linkedin_url": linkedin_url, "email": email}
+
+
+def _extract_linkedin_url(page) -> str:
+    """
+    Open the Sales Nav profile More menu and grab the href from
+    'View LinkedIn profile' — then close the menu without navigating.
+    """
+    more_btn = page.locator("button[data-x--lead-actions-bar-overflow-menu]")
+    try:
+        if not more_btn.first.is_visible(timeout=2000):
+            return ""
+        more_btn.first.click()
+        page.wait_for_timeout(800)
+
+        # Menu items are dynamically rendered after click
+        view_link = page.locator("a:has-text('View LinkedIn profile')")
+        if view_link.first.is_visible(timeout=2000):
+            href = view_link.first.get_attribute("href") or ""
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+            if "/in/" in href:
+                return href.split("?")[0]
+
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
+    except PlaywrightTimeoutError:
+        pass
+    return ""
+
+
+def _extract_email(page) -> str:
+    """
+    Extract a public email from the Sales Navigator contact info section.
+    Emails appear as mailto: links inside section[data-sn-view-name="lead-contact-info"]
+    when the lead has made their email public.
+    """
+    el = page.locator(
+        "section[data-sn-view-name='lead-contact-info'] a[href^='mailto:']"
+    )
+    try:
+        if el.first.is_visible(timeout=1500):
+            href = el.first.get_attribute("href") or ""
+            return href.replace("mailto:", "").strip()
+    except PlaywrightTimeoutError:
+        pass
+    return ""

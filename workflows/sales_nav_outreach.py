@@ -19,20 +19,20 @@ from linkedin.inmail import send_inmail
 
 
 def _synthetic_email(sales_nav_url: str) -> str:
-    """Derive a stable unique key from a Sales Navigator profile URL."""
-    # /sales/lead/ACwAAAxxxxxx,NAME:john-doe → sn_john-doe@salesnav.local
-    if "NAME:" in sales_nav_url:
-        slug = sales_nav_url.split("NAME:")[-1].split(",")[0].split("?")[0].lower()
-    else:
-        slug = sales_nav_url.rstrip("/").split("/")[-1].lower()
+    """Derive a stable unique key from a Sales Navigator profile URL.
+    URL format: /sales/lead/ACwAAAxxxxxx,NAME_SEARCH,key
+    Use the profile ID (first segment before comma) as the key.
+    """
+    slug = sales_nav_url.rstrip("/").split("/sales/lead/")[-1].split(",")[0].lower()
     return f"sn_{slug}@salesnav.local"
 
 
 def run(
-    list_url: str,
+    list_url: str = None,
     dry_run: bool = False,
     preview: bool = False,
     limit: int = None,
+    profile_url: str = None,
 ):
     if dry_run:
         print("--- DRY RUN MODE ---\n")
@@ -55,8 +55,11 @@ def run(
     with sync_playwright() as p:
         browser, _context, page = launch_browser(p)
 
-        print(f"Scraping list: {list_url}")
-        leads = scrape_people_list(page, list_url)
+        if profile_url:
+            leads = [{"name": "Test", "first_name": "Test", "last_name": "", "title": "", "company": "", "sales_nav_url": profile_url, "linkedin_url": ""}]
+        else:
+            print(f"Scraping list: {list_url}")
+            leads = scrape_people_list(page, list_url)
 
         if not leads:
             print("No leads found in list.")
@@ -88,13 +91,14 @@ def run(
             label = f"{lead['name']} @ {lead.get('company', '?')}"
             print(f"[{i}/{total}] {label} ... ", end="", flush=True)
 
-            result = send_inmail(
+            info = send_inmail(
                 page,
                 lead["sales_nav_url"],
                 lead["first_name"],
                 dry_run=dry_run,
                 preview=preview,
             )
+            result = info["result"]
             print(result)
 
             if result == "session_expired":
@@ -103,15 +107,20 @@ def run(
                 return
 
             if not dry_run and result == "inmail_sent":
+                # If a public email was found, use it as the primary key
+                real_email = info["email"] or None
+                key = real_email if real_email else email_key
                 db.upsert_lead(
-                    email_key,
+                    key,
                     first_name=lead["first_name"],
                     last_name=lead["last_name"],
-                    linkedin_url=lead.get("linkedin_url") or lead["sales_nav_url"],
+                    linkedin_url=info["linkedin_url"] or None,
                     company=lead.get("company"),
                     source="sales_nav",
+                    title=lead.get("title") or None,
+                    sales_nav_url=lead["sales_nav_url"],
                 )
-                db.log_activity(email_key, "inmail_sent")
+                db.log_activity(key, "inmail_sent")
 
             if i < total:
                 time.sleep(random.uniform(30, 60))

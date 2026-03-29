@@ -61,6 +61,12 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_leads_status
                 ON leads(linkedin_status);
         """)
+        # Add new columns to existing DBs — silently skip if already present
+        for col in ("title TEXT", "sales_nav_url TEXT"):
+            try:
+                conn.execute(f"ALTER TABLE leads ADD COLUMN {col}")
+            except Exception:
+                pass
 
 
 def upsert_lead(
@@ -70,19 +76,23 @@ def upsert_lead(
     linkedin_url: str = None,
     company: str = None,
     source: str = None,
+    title: str = None,
+    sales_nav_url: str = None,
 ):
     """Insert a new lead or update contact info if already exists. Never overwrites linkedin_status."""
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         conn.execute("""
-            INSERT INTO leads (email, first_name, last_name, linkedin_url, company, source, created_at)
-            VALUES (:email, :first_name, :last_name, :linkedin_url, :company, :source, :now)
+            INSERT INTO leads (email, first_name, last_name, linkedin_url, company, source, title, sales_nav_url, created_at)
+            VALUES (:email, :first_name, :last_name, :linkedin_url, :company, :source, :title, :sales_nav_url, :now)
             ON CONFLICT(email) DO UPDATE SET
                 first_name   = COALESCE(:first_name, first_name),
                 last_name    = COALESCE(:last_name, last_name),
                 linkedin_url = COALESCE(:linkedin_url, linkedin_url),
                 company      = COALESCE(:company, company),
-                source       = COALESCE(:source, source)
+                source       = COALESCE(:source, source),
+                title        = COALESCE(:title, title),
+                sales_nav_url = COALESCE(:sales_nav_url, sales_nav_url)
         """, {
             "email": email,
             "first_name": first_name,
@@ -90,6 +100,8 @@ def upsert_lead(
             "linkedin_url": linkedin_url,
             "company": company,
             "source": source,
+            "title": title,
+            "sales_nav_url": sales_nav_url,
             "now": now,
         })
 

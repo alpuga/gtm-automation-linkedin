@@ -14,7 +14,7 @@ def scrape_people_list(page, list_url: str) -> list[dict]:
 
     try:
         page.goto(list_url, wait_until="domcontentloaded", timeout=30_000)
-        page.wait_for_timeout(random.randint(2000, 3000))
+        page.wait_for_timeout(random.randint(3000, 4000))
     except PlaywrightTimeoutError:
         print("error (page load timeout on list)")
         return leads
@@ -25,27 +25,28 @@ def scrape_people_list(page, list_url: str) -> list[dict]:
 
     page_num = 1
     while True:
+        # Wait for rows to be populated
+        try:
+            page.wait_for_selector("tr[data-x--people-list--row]", timeout=15_000)
+        except PlaywrightTimeoutError:
+            print(f"  (no rows found on page {page_num})")
+            break
+
+        page.wait_for_timeout(800)
+
         if os.getenv("DEBUG_HTML"):
             os.makedirs("data/screenshots", exist_ok=True)
             with open(f"data/screenshots/sales_nav_list_p{page_num}.html", "w") as f:
                 f.write(page.content())
 
-        # Wait for lead cards
-        try:
-            page.wait_for_selector(
-                "li[data-view-name='search-results-lead-result']", timeout=10_000
-            )
-        except PlaywrightTimeoutError:
-            break
-
-        cards = page.locator("li[data-view-name='search-results-lead-result']").all()
-        for card in cards:
-            lead = _extract_lead(card)
+        rows = page.locator("tr[data-x--people-list--row]").all()
+        for row in rows:
+            lead = _extract_lead(row)
             if lead:
                 leads.append(lead)
 
-        # Next page
-        next_btn = page.locator("button[aria-label='Next']")
+        # Next page button
+        next_btn = page.locator("button[class*='_next-btn']")
         try:
             if next_btn.first.is_visible(timeout=2000) and next_btn.first.is_enabled():
                 next_btn.first.click()
@@ -59,10 +60,10 @@ def scrape_people_list(page, list_url: str) -> list[dict]:
     return leads
 
 
-def _extract_lead(card) -> dict | None:
+def _extract_lead(row) -> dict | None:
     try:
-        # Name link
-        name_link = card.locator("a[data-view-name='search-results-lead-name']")
+        # Name and Sales Nav URL
+        name_link = row.locator("a.lists-detail__view-profile-name-link")
         if not name_link.first.is_visible(timeout=1000):
             return None
 
@@ -76,7 +77,7 @@ def _extract_lead(card) -> dict | None:
         # Title
         title = ""
         try:
-            title_el = card.locator("[data-view-name='search-results-lead-title']")
+            title_el = row.locator("div[data-anonymize='job-title']")
             if title_el.first.is_visible(timeout=500):
                 title = title_el.first.inner_text().strip()
         except PlaywrightTimeoutError:
@@ -85,13 +86,11 @@ def _extract_lead(card) -> dict | None:
         # Company
         company = ""
         try:
-            company_el = card.locator("[data-view-name='search-results-lead-company-name']")
+            company_el = row.locator("span[data-anonymize='company-name']")
             if company_el.first.is_visible(timeout=500):
                 company = company_el.first.inner_text().strip()
         except PlaywrightTimeoutError:
             pass
-
-        linkedin_url = _resolve_linkedin_url(card, sales_nav_url)
 
         parts = name.split(" ", 1)
         first_name = parts[0]
@@ -104,27 +103,7 @@ def _extract_lead(card) -> dict | None:
             "title": title,
             "company": company,
             "sales_nav_url": sales_nav_url,
-            "linkedin_url": linkedin_url,
+            "linkedin_url": "",  # not available in list view
         }
-    except PlaywrightTimeoutError:
+    except (PlaywrightTimeoutError, IndexError):
         return None
-
-
-def _resolve_linkedin_url(card, sales_nav_url: str) -> str:
-    """Try to get the regular linkedin.com/in/ URL from the card, or derive it from the Sales Nav URL."""
-    # Some cards surface the regular profile link directly
-    try:
-        link = card.locator("a[href*='linkedin.com/in/']")
-        href = link.first.get_attribute("href", timeout=500)
-        if href:
-            return href.split("?")[0]
-    except Exception:
-        pass
-
-    # Sales Nav URL format: /sales/lead/ACwAAAxxxxxx,NAME:john-doe
-    if "NAME:" in sales_nav_url:
-        slug = sales_nav_url.split("NAME:")[-1].split(",")[0].split("?")[0].lower()
-        if slug:
-            return f"https://www.linkedin.com/in/{slug}/"
-
-    return ""
