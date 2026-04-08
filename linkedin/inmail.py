@@ -115,25 +115,22 @@ def send_inmail(
         input("  → InMail ready. Press Enter here to continue (will NOT be sent)...")
         return {"result": "preview (not sent)", "linkedin_url": linkedin_url, "email": email}
 
-    # Send button
-    send_btn = None
-    for selector in (
-        "button[aria-label='Send']",
-        "button[data-control-name='send']",
-        "button:has-text('Send')",
-    ):
-        el = page.locator(selector)
-        try:
-            if el.first.is_visible(timeout=2000):
-                send_btn = el.first
-                break
-        except PlaywrightTimeoutError:
-            continue
+    # Click Send via JS — bypasses pointer event interception from the overlay entirely
+    sent = page.evaluate("""
+        () => {
+            const overlay = document.querySelector('div#message-overlay');
+            const root = overlay || document;
+            const btn = Array.from(root.querySelectorAll('button')).find(
+                b => b.textContent.trim() === 'Send'
+            );
+            if (btn) { btn.click(); return true; }
+            return false;
+        }
+    """)
 
-    if send_btn is None:
+    if not sent:
         return {"result": "error (send button not found)", "linkedin_url": linkedin_url, "email": email}
 
-    send_btn.click()
     page.wait_for_timeout(1500)
     return {"result": "inmail_sent", "linkedin_url": linkedin_url, "email": email}
 

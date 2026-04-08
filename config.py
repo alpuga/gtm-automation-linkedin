@@ -18,7 +18,7 @@ ACTIVITY_LOG = "data/activity_log.csv"  # legacy CSV — used by migration scrip
 
 # --- Limits ---
 DAILY_LIMIT = 40
-INMAIL_DAILY_LIMIT = 10     # conservative — Sales Navigator gives ~50 credits/month
+INMAIL_DAILY_LIMIT = 50     # conservative — Sales Navigator gives ~50 credits/month
 POST_RECENCY_DAYS = 60      # only engage with posts newer than this
 MIN_DM_WAIT_DAYS = 1        # minimum days to wait after invite before sending follow-up DM
 
@@ -39,14 +39,14 @@ DM_TEXT = (
 )
 
 # Sales Navigator InMail — sent to cold prospects via sales_nav_outreach workflow
-INMAIL_SUBJECT = "Normally hate InMails, but..."
+INMAIL_SUBJECT = "Normally not a fan of InMails, but..."
 
 INMAIL_BODY = (
-    "Hi {first_name}, I thought sending you an Inmail would be worth it.\n\n"
+    "Hi {first_name}, I thought sending you an inmail would be worth it.\n\n"
     "I help companies like yours create branded merch, from swag bags to event kits, "
     "without the usual headaches.\n\n"
     "Would love to put together some mockups for you guys if there's any interest. "
-    "Happy to keep it quick!\n\n"
+    "Happy to keep it quick! "
 )
 
 # Step 3 — sent when a connection request is accepted (check_status workflow)

@@ -85,10 +85,6 @@ def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = Fals
         activity_log.reset_today()
         return
 
-    if profile_url and not dry_run:
-        print("Error: --profile requires --dry-run.")
-        return
-
     if dry_run:
         print("--- DRY RUN MODE ---\n")
 
@@ -151,6 +147,10 @@ def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = Fals
                     'display notification "Re-run setup_session.py to log in again." with title "LinkedIn session expired"'
                 ])
                 print("\nLinkedIn session expired. Re-run setup_session.py then try again.")
+                break
+
+            if result == "limit_reached":
+                print("\nLinkedIn invitation limit reached. Stopping for today.")
                 break
 
             if result == "invite_sent":

@@ -27,7 +27,14 @@ class InstantlyClient(LeadSource):
             payload = {"limit": 100}
             if starting_after:
                 payload["starting_after"] = starting_after
-            resp = httpx.post(INSTANTLY_LEADS_URL, headers=self.headers, json=payload, timeout=30)
+            for attempt in range(3):
+                try:
+                    resp = httpx.post(INSTANTLY_LEADS_URL, headers=self.headers, json=payload, timeout=60)
+                    break
+                except httpx.ReadTimeout:
+                    if attempt == 2:
+                        raise
+                    print(f"  Instantly API timeout, retrying ({attempt + 1}/3)...")
             resp.raise_for_status()
             data = resp.json()
             for lead in data.get("items", []):

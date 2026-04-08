@@ -72,6 +72,16 @@ def detect_connection_state(page, linkedin_url: str) -> str:
 def send_connection_request(page, first_name: str) -> str:
     """Send a connection request with a note. Page must be on the custom-invite URL."""
 
+    # Detect email-verification-required modal before interacting
+    # LinkedIn shows this when the recipient has enabled "people you may know" protection
+    try:
+        if page.get_by_text("please enter their email", exact=False).first.is_visible(timeout=2000):
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(500)
+            return "skipped (email required)"
+    except PlaywrightTimeoutError:
+        pass
+
     # Click "Add a note"
     try:
         add_note_btn = page.get_by_role("button", name="Add a note")
@@ -127,13 +137,17 @@ def send_connection_request(page, first_name: str) -> str:
         page.screenshot(path="data/screenshots/_send_connection_verify_failed.png")
         return "error (modal did not close after send)"
 
-    # Check for weekly limit notice
-    try:
-        if page.get_by_text("weekly limit", exact=False).first.is_visible(timeout=2000):
-            page.get_by_role("button", name="Got it").first.click()
-            return "skipped (weekly invitation limit reached)"
-    except PlaywrightTimeoutError:
-        pass
+    # Check for invitation limit notices — LinkedIn uses various phrasings
+    for phrase in ("weekly limit", "invitation limit", "limit reached", "too many"):
+        try:
+            if page.get_by_text(phrase, exact=False).first.is_visible(timeout=1000):
+                try:
+                    page.get_by_role("button", name="Got it").first.click()
+                except Exception:
+                    pass
+                return "limit_reached"
+        except PlaywrightTimeoutError:
+            continue
 
     block = _check_for_blocking_modal(page)
     if block:
@@ -143,12 +157,37 @@ def send_connection_request(page, first_name: str) -> str:
 
 
 def _check_for_blocking_modal(page) -> str | None:
-    """Check for email-verification modal. Returns skip reason or None."""
-    try:
-        email_input = page.get_by_role("textbox", name="Email address")
-        if email_input.first.is_visible(timeout=2000):
-            page.keyboard.press("Escape")
-            return "skipped (email required)"
-    except PlaywrightTimeoutError:
-        pass
+    """Check for email-verification or other blocking modals. Returns skip reason or None."""
+    # Try multiple selectors LinkedIn uses for the email verification step
+    email_selectors = [
+        lambda: page.get_by_role("textbox", name="Email address"),
+        lambda: page.get_by_role("textbox", name="email"),
+        lambda: page.locator("input[type='email']"),
+        lambda: page.locator("input[name='email']"),
+        lambda: page.locator("input[autocomplete='email']"),
+    ]
+    for selector_fn in email_selectors:
+        try:
+            el = selector_fn()
+            if el.first.is_visible(timeout=1000):
+                os.makedirs("data/screenshots", exist_ok=True)
+                page.screenshot(path="data/screenshots/_email_required_modal.png")
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+                return "skipped (email required)"
+        except PlaywrightTimeoutError:
+            continue
+
+    # Catch any modal with email-related text as a fallback
+    for phrase in ("Enter your email", "confirm your email", "verify your email", "add your email"):
+        try:
+            if page.get_by_text(phrase, exact=False).first.is_visible(timeout=500):
+                os.makedirs("data/screenshots", exist_ok=True)
+                page.screenshot(path="data/screenshots/_email_required_modal.png")
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+                return "skipped (email required)"
+        except PlaywrightTimeoutError:
+            continue
+
     return None
