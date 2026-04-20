@@ -175,6 +175,20 @@ def load_invite_sent_leads() -> dict[str, str]:
     return {row["email"]: row["linkedin_url"] for row in rows}
 
 
+def load_uncontacted_leads() -> list[dict]:
+    """Return not_contacted leads that have a LinkedIn URL, ordered oldest first."""
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT email, first_name, last_name, linkedin_url, company
+            FROM leads
+            WHERE linkedin_status = 'not_contacted'
+            AND linkedin_url IS NOT NULL AND linkedin_url != ''
+            ORDER BY created_at DESC
+        """).fetchall()
+    return [dict(row) for row in rows]
+
+
 def load_processed_emails() -> set[str]:
     """Return emails that have had a LinkedIn action taken (not just synced from CRM)."""
     init_db()
@@ -262,10 +276,12 @@ def _result_to_status(result: str) -> str | None:
         return "accepted"
     if result == "dm_sent":
         return "dm_sent"
-    if result == "pending":
+    if result in ("pending", "skipped (pending)"):
         return "pending"
     if result == "inmail_sent":
         return "inmail_sent"
     if result and result.startswith("ignored"):
+        return "ignored"
+    if result and result.startswith("skipped"):
         return "ignored"
     return None

@@ -80,17 +80,13 @@ def handle_lead(page, lead: dict, dry_run: bool = False) -> str:
     return send_connection_request(page, first_name)
 
 
-def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = False):
+def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = False, from_db: bool = False):
     if reset_today:
         activity_log.reset_today()
         return
 
     if dry_run:
         print("--- DRY RUN MODE ---\n")
-
-    if not os.getenv("INSTANTLY_API_KEY"):
-        print("Error: set INSTANTLY_API_KEY in .env")
-        return
 
     if not os.path.exists(config.SESSION_FILE):
         print(f"Error: session file '{config.SESSION_FILE}' not found. Run setup_session.py first.")
@@ -99,7 +95,27 @@ def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = Fals
     if profile_url:
         leads = [{"email": "test@test.com", "first_name": "Test", "payload": {"linkedIn": profile_url}}]
         pending = leads
+    elif from_db:
+        from crm.db import load_uncontacted_leads
+        print("Loading uncontacted leads from local DB...")
+        pending = load_uncontacted_leads()
+        print(f"{len(pending)} uncontacted lead(s) with LinkedIn URLs.")
+        if not pending:
+            print("Nothing to do.")
+            return
+
+        done_today = activity_log.count_processed_today()
+        remaining = config.DAILY_LIMIT - done_today
+        if remaining <= 0:
+            print(f"Daily limit of {config.DAILY_LIMIT} reached. Run again tomorrow.")
+            return
+        pending = pending[:remaining]
+        print(f"Daily limit: {config.DAILY_LIMIT} — {done_today} done today, processing up to {len(pending)} more.")
     else:
+        if not os.getenv("INSTANTLY_API_KEY"):
+            print("Error: set INSTANTLY_API_KEY in .env")
+            return
+
         client = InstantlyClient()
         print("Fetching leads from Instantly...")
         leads = client.fetch_leads()
@@ -137,7 +153,7 @@ def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = Fals
             result = handle_lead(page, lead, dry_run=dry_run)
             print(result)
 
-            if not dry_run:
+            if not dry_run and email != "test@test.com":
                 linkedin_url = extract_linkedin_url(lead) or ""
                 activity_log.log_activity(email, result, linkedin_url)
 

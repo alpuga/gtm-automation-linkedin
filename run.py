@@ -16,6 +16,7 @@ def main():
     p_out.add_argument("--dry-run", action="store_true", help="Detect states but send nothing")
     p_out.add_argument("--profile", type=str, help="Test against a single LinkedIn profile URL (requires --dry-run)")
     p_out.add_argument("--reset-today", action="store_true", help="Remove today's entries to reset the daily limit")
+    p_out.add_argument("--from-db", action="store_true", help="Read uncontacted leads from local DB instead of Instantly API")
 
     # status
     p_status = sub.add_parser("status", help="Check invite statuses, send follow-up DMs, log pending")
@@ -43,7 +44,7 @@ def main():
 
     if args.command == "outreach":
         from workflows.outreach import run
-        run(dry_run=args.dry_run, profile_url=args.profile, reset_today=args.reset_today)
+        run(dry_run=args.dry_run, profile_url=args.profile, reset_today=args.reset_today, from_db=args.from_db)
 
     elif args.command == "status":
         from workflows.check_status import run
