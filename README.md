@@ -36,7 +36,7 @@ poetry run playwright install chromium
 
 Create a `.env` file:
 ```
-INSTANTLY_API_KEY=your_key_here
+INSTANTLY_API_KEY=your_key_here   # required for sync and outreach (without --from-db)
 LINKEDIN_SESSION_FILE=linkedin_session.json
 ```
 
@@ -79,20 +79,21 @@ poetry run python run.py report
 
 **Options:**
 ```bash
-poetry run python run.py outreach --dry-run                  # detect states, send nothing
-poetry run python run.py outreach --profile <url> --dry-run  # test a single profile
-poetry run python run.py outreach --reset-today              # reset daily limit
+poetry run python run.py outreach --dry-run             # detect states, send nothing
+poetry run python run.py outreach --profile <url>       # test against a single LinkedIn profile
+poetry run python run.py outreach --reset-today         # reset daily limit
+poetry run python run.py outreach --from-db             # read leads from local DB instead of Instantly API
 poetry run python run.py status --dry-run
-poetry run python run.py status --inbox                      # faster: scan inbox to find acceptances instead of visiting each profile
+poetry run python run.py status --inbox                 # faster: scan inbox to find acceptances instead of visiting each profile
 poetry run python run.py status --inbox --dry-run
-poetry run python run.py status --limit 5                    # test against first 5 leads
+poetry run python run.py status --limit 5               # test against first 5 leads
 poetry run python run.py inmail --list <sales_nav_list_url>  # send InMails from a Sales Navigator list
 poetry run python run.py inmail --list <url> --dry-run
 poetry run python run.py inmail --list <url> --preview --limit 1
 ```
 
 **Typical weekly rhythm:**
-- Run `sync` + `outreach` daily (up to 40 leads/day)
+- Run `sync` then `outreach --from-db` daily (up to 40 leads/day) — or `outreach` to pull fresh from Instantly
 - Run `status --inbox` once or twice a week to follow up on acceptances
 - Run `report` for a snapshot at any time
 - Run `inmail` separately for cold Sales Navigator outreach (10/day limit)
@@ -160,4 +161,6 @@ data/                  ← runtime artifacts (gitignored)
 - The degree check in `linkedin/message.py` ensures follow-up DMs are never sent as InMails — only 1st-degree connections receive them.
 - `status --inbox` matches accepted connections by full name from the inbox conversation list, which is faster than visiting each profile individually.
 - Sales Navigator InMail leads are stored with a synthetic email key (`sn_{slug}@salesnav.local`) since they have no real email in the DB.
+- `outreach --from-db` skips the Instantly API entirely — useful for offline runs or after a `sync`. Leads that are skipped (email required, profile not found, etc.) are marked `ignored` and won't be retried.
+- Profiles that require the sender's email to connect are automatically skipped and logged as `ignored`.
 - `linkedin_session.json`, `.env`, and `data/` are gitignored.
