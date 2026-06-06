@@ -20,6 +20,8 @@ VALID_STATUSES = {
     "ignored",
     "dm_sent",
     "inmail_sent",
+    "engaged",
+    "commented",
 }
 
 
@@ -35,6 +37,15 @@ def init_db():
     """Create tables if they don't exist."""
     with get_connection() as conn:
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS lists (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT NOT NULL,
+                sales_nav_url   TEXT NOT NULL UNIQUE,
+                campaign        TEXT,
+                created_at      TEXT NOT NULL,
+                last_scraped_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS leads (
                 email           TEXT PRIMARY KEY,
                 first_name      TEXT,
@@ -62,7 +73,7 @@ def init_db():
                 ON leads(linkedin_status);
         """)
         # Add new columns to existing DBs — silently skip if already present
-        for col in ("title TEXT", "sales_nav_url TEXT"):
+        for col in ("title TEXT", "sales_nav_url TEXT", "campaign TEXT", "list_id INTEGER", "location TEXT", "bio TEXT", "headline TEXT", "score INTEGER", "score_reason TEXT", "persona TEXT"):
             try:
                 conn.execute(f"ALTER TABLE leads ADD COLUMN {col}")
             except Exception:
@@ -78,21 +89,31 @@ def upsert_lead(
     source: str = None,
     title: str = None,
     sales_nav_url: str = None,
+    campaign: str = None,
+    list_id: int = None,
+    location: str = None,
+    bio: str = None,
+    headline: str = None,
 ):
     """Insert a new lead or update contact info if already exists. Never overwrites linkedin_status."""
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         conn.execute("""
-            INSERT INTO leads (email, first_name, last_name, linkedin_url, company, source, title, sales_nav_url, created_at)
-            VALUES (:email, :first_name, :last_name, :linkedin_url, :company, :source, :title, :sales_nav_url, :now)
+            INSERT INTO leads (email, first_name, last_name, linkedin_url, company, source, title, sales_nav_url, campaign, list_id, location, bio, headline, created_at)
+            VALUES (:email, :first_name, :last_name, :linkedin_url, :company, :source, :title, :sales_nav_url, :campaign, :list_id, :location, :bio, :headline, :now)
             ON CONFLICT(email) DO UPDATE SET
-                first_name   = COALESCE(:first_name, first_name),
-                last_name    = COALESCE(:last_name, last_name),
-                linkedin_url = COALESCE(:linkedin_url, linkedin_url),
-                company      = COALESCE(:company, company),
-                source       = COALESCE(:source, source),
-                title        = COALESCE(:title, title),
-                sales_nav_url = COALESCE(:sales_nav_url, sales_nav_url)
+                first_name    = COALESCE(:first_name, first_name),
+                last_name     = COALESCE(:last_name, last_name),
+                linkedin_url  = COALESCE(:linkedin_url, linkedin_url),
+                company       = COALESCE(:company, company),
+                source        = COALESCE(:source, source),
+                title         = COALESCE(:title, title),
+                sales_nav_url = COALESCE(:sales_nav_url, sales_nav_url),
+                campaign      = COALESCE(:campaign, campaign),
+                list_id       = COALESCE(:list_id, list_id),
+                location      = COALESCE(:location, location),
+                bio           = COALESCE(:bio, bio),
+                headline      = COALESCE(:headline, headline)
         """, {
             "email": email,
             "first_name": first_name,
@@ -102,6 +123,11 @@ def upsert_lead(
             "source": source,
             "title": title,
             "sales_nav_url": sales_nav_url,
+            "campaign": campaign,
+            "list_id": list_id,
+            "location": location,
+            "bio": bio,
+            "headline": headline,
             "now": now,
         })
 
@@ -175,17 +201,51 @@ def load_invite_sent_leads() -> dict[str, str]:
     return {row["email"]: row["linkedin_url"] for row in rows}
 
 
-def load_uncontacted_leads() -> list[dict]:
+def load_unscored_leads(campaign: str = None) -> list[dict]:
+    """Return leads that have not been scored yet (score IS NULL)."""
+    init_db()
+    where = "WHERE score IS NULL AND linkedin_url IS NOT NULL AND linkedin_url != ''"
+    params = []
+    if campaign:
+        where += " AND campaign = ?"
+        params.append(campaign)
+    with get_connection() as conn:
+        rows = conn.execute(f"""
+            SELECT email, first_name, last_name, title, company, headline, bio, campaign
+            FROM leads
+            {where}
+            ORDER BY created_at DESC
+        """, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_lead_score(email: str, score: int, reason: str, persona: str = None):
+    """Store Claude's score, reasoning, and persona classification for a lead."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE leads SET score = ?, score_reason = ?, persona = ? WHERE email = ?",
+            (score, reason, persona, email)
+        )
+
+
+def load_uncontacted_leads(campaign: str = None, min_score: int = None) -> list[dict]:
     """Return not_contacted leads that have a LinkedIn URL, ordered oldest first."""
     init_db()
+    where = "WHERE linkedin_status = 'not_contacted' AND linkedin_url IS NOT NULL AND linkedin_url != ''"
+    params = []
+    if campaign:
+        where += " AND campaign = ?"
+        params.append(campaign)
+    if min_score is not None:
+        where += " AND score >= ?"
+        params.append(min_score)
     with get_connection() as conn:
-        rows = conn.execute("""
-            SELECT email, first_name, last_name, linkedin_url, company
+        rows = conn.execute(f"""
+            SELECT email, first_name, last_name, linkedin_url, company, score, persona
             FROM leads
-            WHERE linkedin_status = 'not_contacted'
-            AND linkedin_url IS NOT NULL AND linkedin_url != ''
+            {where}
             ORDER BY created_at DESC
-        """).fetchall()
+        """, params).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -266,6 +326,75 @@ def get_first_name(email: str) -> str:
             "SELECT first_name FROM leads WHERE email = ?", (email,)
         ).fetchone()
     return (row["first_name"] or "there") if row else "there"
+
+
+def get_lead_fields(email: str) -> dict:
+    """Return first_name and company for a lead, with safe fallbacks."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT first_name, company FROM leads WHERE email = ?", (email,)
+        ).fetchone()
+    if not row:
+        return {"first_name": "there", "company": "your firm"}
+    return {
+        "first_name": row["first_name"] or "there",
+        "company": row["company"] or "your firm",
+    }
+
+
+def get_or_create_list(sales_nav_url: str, name: str, campaign: str = None) -> dict:
+    """Get existing list by URL or create a new one. Returns the list record as a dict."""
+    init_db()
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id, name, campaign, last_scraped_at FROM lists WHERE sales_nav_url = ?",
+            (sales_nav_url,)
+        ).fetchone()
+        if existing:
+            return dict(existing)
+        conn.execute(
+            "INSERT INTO lists (name, sales_nav_url, campaign, created_at) VALUES (?, ?, ?, ?)",
+            (name, sales_nav_url, campaign, now)
+        )
+        row = conn.execute(
+            "SELECT id, name, campaign, last_scraped_at FROM lists WHERE sales_nav_url = ?",
+            (sales_nav_url,)
+        ).fetchone()
+        return dict(row)
+
+
+def update_list_scraped_at(list_id: int):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        conn.execute("UPDATE lists SET last_scraped_at = ? WHERE id = ?", (now, list_id))
+
+
+def get_list_sales_nav_urls(list_id: int) -> set[str]:
+    """Return the set of sales_nav_urls already stored for a given list."""
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT sales_nav_url FROM leads WHERE list_id = ? AND sales_nav_url IS NOT NULL",
+            (list_id,)
+        ).fetchall()
+    return {row["sales_nav_url"] for row in rows}
+
+
+def get_all_lists() -> list[dict]:
+    """Return all lists with lead counts."""
+    init_db()
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT l.id, l.name, l.campaign, l.sales_nav_url,
+                   l.created_at, l.last_scraped_at,
+                   COUNT(ld.email) as lead_count
+            FROM lists l
+            LEFT JOIN leads ld ON ld.list_id = l.id
+            GROUP BY l.id
+            ORDER BY l.created_at DESC
+        """).fetchall()
+    return [dict(row) for row in rows]
 
 
 def _result_to_status(result: str) -> str | None:

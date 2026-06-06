@@ -69,7 +69,7 @@ def detect_connection_state(page, linkedin_url: str) -> str:
     return "disabled"
 
 
-def send_connection_request(page, first_name: str) -> str:
+def send_connection_request(page, first_name: str, note: str = None) -> str:
     """Send a connection request with a note. Page must be on the custom-invite URL."""
 
     # Detect email-verification-required modal before interacting
@@ -100,7 +100,7 @@ def send_connection_request(page, first_name: str) -> str:
     try:
         note_box = page.locator("textarea").first
         note_box.wait_for(state="attached", timeout=3000)
-        note = CONNECT_NOTE.format(first_name=first_name)[:300]
+        note = (note or CONNECT_NOTE).format(first_name=first_name)[:300]
         page.evaluate(
             "([el, val]) => { el.value = val; el.dispatchEvent(new Event('input', {bubbles: true})); }",
             [note_box.element_handle(), note]

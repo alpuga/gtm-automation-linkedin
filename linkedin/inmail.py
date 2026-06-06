@@ -5,6 +5,7 @@ import random
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from config import INMAIL_SUBJECT, INMAIL_BODY
+from linkedin.sales_nav import extract_linkedin_url, extract_email
 
 
 def send_inmail(
@@ -33,8 +34,8 @@ def send_inmail(
         return _ret("session_expired")
 
     # Extract contact info while we're on the profile page
-    linkedin_url = _extract_linkedin_url(page)
-    email = _extract_email(page)
+    linkedin_url = extract_linkedin_url(page)
+    email = extract_email(page)
 
     if os.getenv("DEBUG_HTML"):
         os.makedirs("data/screenshots", exist_ok=True)
@@ -135,47 +136,3 @@ def send_inmail(
     return {"result": "inmail_sent", "linkedin_url": linkedin_url, "email": email}
 
 
-def _extract_linkedin_url(page) -> str:
-    """
-    Open the Sales Nav profile More menu and grab the href from
-    'View LinkedIn profile' — then close the menu without navigating.
-    """
-    more_btn = page.locator("button[data-x--lead-actions-bar-overflow-menu]")
-    try:
-        if not more_btn.first.is_visible(timeout=2000):
-            return ""
-        more_btn.first.click()
-        page.wait_for_timeout(800)
-
-        # Menu items are dynamically rendered after click
-        view_link = page.locator("a:has-text('View LinkedIn profile')")
-        if view_link.first.is_visible(timeout=2000):
-            href = view_link.first.get_attribute("href") or ""
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(400)
-            if "/in/" in href:
-                return href.split("?")[0]
-
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(400)
-    except PlaywrightTimeoutError:
-        pass
-    return ""
-
-
-def _extract_email(page) -> str:
-    """
-    Extract a public email from the Sales Navigator contact info section.
-    Emails appear as mailto: links inside section[data-sn-view-name="lead-contact-info"]
-    when the lead has made their email public.
-    """
-    el = page.locator(
-        "section[data-sn-view-name='lead-contact-info'] a[href^='mailto:']"
-    )
-    try:
-        if el.first.is_visible(timeout=1500):
-            href = el.first.get_attribute("href") or ""
-            return href.replace("mailto:", "").strip()
-    except PlaywrightTimeoutError:
-        pass
-    return ""

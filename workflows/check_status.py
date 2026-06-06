@@ -108,8 +108,10 @@ def run(dry_run: bool = False, preview: bool = False, limit: int = None, profile
                 if not dry_run:
                     activity_log.log_activity(email, "pending", linkedin_url)
             else:
-                first_name = activity_log.get_first_name(email)
-                result = send_follow_up_dm(page, linkedin_url, first_name, dry_run, preview=preview)
+                lead_fields = activity_log.get_lead_fields(email)
+                first_name = lead_fields["first_name"]
+                company = lead_fields["company"]
+                result = send_follow_up_dm(page, linkedin_url, first_name, dry_run, preview=preview, company=company)
                 print(result)
                 if result == "session_expired":
                     print("Session expired mid-run. Re-run setup_session.py.")

@@ -14,17 +14,8 @@ from playwright.sync_api import sync_playwright
 import config
 from crm import db
 from linkedin.browser import launch_browser
-from linkedin.sales_nav import scrape_people_list
+from linkedin.sales_nav import scrape_people_list, synthetic_email as _synthetic_email
 from linkedin.inmail import send_inmail
-
-
-def _synthetic_email(sales_nav_url: str) -> str:
-    """Derive a stable unique key from a Sales Navigator profile URL.
-    URL format: /sales/lead/ACwAAAxxxxxx,NAME_SEARCH,key
-    Use the profile ID (first segment before comma) as the key.
-    """
-    slug = sales_nav_url.rstrip("/").split("/sales/lead/")[-1].split(",")[0].lower()
-    return f"sn_{slug}@salesnav.local"
 
 
 def run(

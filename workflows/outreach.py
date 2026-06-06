@@ -31,6 +31,11 @@ def handle_lead(page, lead: dict, dry_run: bool = False) -> str:
         linkedin_url = "https://" + linkedin_url[7:]
 
     first_name = lead.get("first_name") or lead.get("firstName") or "there"
+    company = lead.get("company") or "your firm"
+
+    persona = lead.get("persona") or "other"
+    note_template = config.CONNECT_NOTES.get(persona, config.CONNECT_NOTE)
+    note = note_template.format(first_name=first_name, company=company)
 
     try:
         page.goto(linkedin_url, wait_until="domcontentloaded", timeout=30_000)
@@ -76,11 +81,11 @@ def handle_lead(page, lead: dict, dry_run: bool = False) -> str:
 
     # not_connected — send connection request
     if dry_run:
-        return "dry-run: would connect"
-    return send_connection_request(page, first_name)
+        return f"dry-run: would connect [{persona}] ({len(note)} chars)\n    {note}"
+    return send_connection_request(page, first_name, note=note)
 
 
-def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = False, from_db: bool = False):
+def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = False, from_db: bool = False, campaign: str = None, min_score: int = None):
     if reset_today:
         activity_log.reset_today()
         return
@@ -98,7 +103,7 @@ def run(dry_run: bool = False, profile_url: str = None, reset_today: bool = Fals
     elif from_db:
         from crm.db import load_uncontacted_leads
         print("Loading uncontacted leads from local DB...")
-        pending = load_uncontacted_leads()
+        pending = load_uncontacted_leads(campaign=campaign, min_score=min_score)
         print(f"{len(pending)} uncontacted lead(s) with LinkedIn URLs.")
         if not pending:
             print("Nothing to do.")

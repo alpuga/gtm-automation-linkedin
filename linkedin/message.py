@@ -23,7 +23,7 @@ def get_connection_degree(profile_card) -> str | None:
     return None
 
 
-def send_dm(page, message_btn, first_name: str, template: str, preview: bool = False) -> str:
+def send_dm(page, message_btn, first_name: str, template: str, preview: bool = False, company: str = "your firm") -> str:
     """Click the Message button and send a DM using the given template.
     If preview=True, fills the compose box but does not send."""
     message_btn.click()
@@ -53,7 +53,9 @@ def send_dm(page, message_btn, first_name: str, template: str, preview: bool = F
         return "error (message compose not found)"
 
     try:
-        msg = template.format(first_name=first_name)
+        class _Safe(dict):
+            def __missing__(self, key): return ""
+        msg = template.format_map(_Safe(first_name=first_name, company=company))
         # focus() bypasses Playwright's actionability checks — avoids timeout
         # on modals that are visible but still animating open
         compose.focus()
@@ -93,7 +95,7 @@ def send_dm(page, message_btn, first_name: str, template: str, preview: bool = F
         return "error (message compose timeout)"
 
 
-def send_follow_up_dm(page, linkedin_url: str, first_name: str, dry_run: bool, preview: bool = False) -> str:
+def send_follow_up_dm(page, linkedin_url: str, first_name: str, dry_run: bool, preview: bool = False, company: str = "your firm") -> str:
     """
     Visit an accepted connection's profile and send a follow-up DM.
     Checks connection degree first — only sends if 1st degree (DM, not InMail).
@@ -132,4 +134,4 @@ def send_follow_up_dm(page, linkedin_url: str, first_name: str, dry_run: bool, p
     if dry_run:
         return "dry-run: would send follow-up DM"
 
-    return send_dm(page, message_btn, first_name, FOLLOW_UP_DM, preview=preview)
+    return send_dm(page, message_btn, first_name, FOLLOW_UP_DM, preview=preview, company=company)

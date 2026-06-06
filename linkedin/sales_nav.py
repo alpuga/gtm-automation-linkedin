@@ -1,14 +1,15 @@
-"""Scrape a Sales Navigator people list — returns lead dicts for each person."""
+"""Sales Navigator scraping — list pagination, profile data extraction."""
 
 import os
 import random
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
-def scrape_people_list(page, list_url: str) -> list[dict]:
+def scrape_people_list(page, list_url: str, limit: int = None) -> list[dict]:
     """
     Paginate through a Sales Navigator people list and return a list of lead dicts.
     Each dict: {first_name, last_name, name, title, company, sales_nav_url, linkedin_url}
+    Stops paginating early if limit is reached.
     """
     leads = []
 
@@ -44,6 +45,8 @@ def scrape_people_list(page, list_url: str) -> list[dict]:
             lead = _extract_lead(row)
             if lead:
                 leads.append(lead)
+                if limit and len(leads) >= limit:
+                    return leads
 
         # Next page button
         next_btn = page.locator("button[class*='_next-btn']")
@@ -92,6 +95,15 @@ def _extract_lead(row) -> dict | None:
         except PlaywrightTimeoutError:
             pass
 
+        # Location — available directly in the list row
+        location = ""
+        try:
+            loc_el = row.locator("td[data-anonymize='location']")
+            if loc_el.first.is_visible(timeout=500):
+                location = loc_el.first.inner_text().strip()
+        except PlaywrightTimeoutError:
+            pass
+
         parts = name.split(" ", 1)
         first_name = parts[0]
         last_name = parts[1] if len(parts) > 1 else ""
@@ -102,8 +114,75 @@ def _extract_lead(row) -> dict | None:
             "last_name": last_name,
             "title": title,
             "company": company,
+            "location": location,
             "sales_nav_url": sales_nav_url,
             "linkedin_url": "",  # not available in list view
         }
     except (PlaywrightTimeoutError, IndexError):
         return None
+
+
+def scrape_list_name(page) -> str:
+    """Try to extract the list name from the Sales Navigator list page header."""
+    for selector in (
+        "h1[data-x--people-list--name]",
+        "h1.list-header__name",
+        "h1",
+    ):
+        try:
+            el = page.locator(selector).first
+            if el.is_visible(timeout=2000):
+                text = el.inner_text().strip()
+                if text and len(text) < 120:
+                    return text
+        except PlaywrightTimeoutError:
+            continue
+    # Fall back to page title (usually "List Name | Sales Navigator")
+    title = page.title()
+    if title and "|" in title:
+        return title.split("|")[0].strip()
+    return ""
+
+
+def extract_linkedin_url(page) -> str:
+    """Extract LinkedIn profile URL from a Sales Navigator profile page via the More menu."""
+    more_btn = page.locator("button[data-x--lead-actions-bar-overflow-menu]")
+    try:
+        if not more_btn.first.is_visible(timeout=2000):
+            return ""
+        more_btn.first.click()
+        page.wait_for_timeout(800)
+
+        view_link = page.locator("a:has-text('View LinkedIn profile')")
+        if view_link.first.is_visible(timeout=2000):
+            href = view_link.first.get_attribute("href") or ""
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+            if "/in/" in href:
+                return href.split("?")[0]
+
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
+    except PlaywrightTimeoutError:
+        pass
+    return ""
+
+
+def extract_email(page) -> str:
+    """Extract public email from a Sales Navigator profile page contact info section."""
+    el = page.locator(
+        "section[data-sn-view-name='lead-contact-info'] a[href^='mailto:']"
+    )
+    try:
+        if el.first.is_visible(timeout=1500):
+            href = el.first.get_attribute("href") or ""
+            return href.replace("mailto:", "").strip()
+    except PlaywrightTimeoutError:
+        pass
+    return ""
+
+
+def synthetic_email(sales_nav_url: str) -> str:
+    """Derive a stable unique key from a Sales Navigator profile URL."""
+    slug = sales_nav_url.rstrip("/").split("/sales/lead/")[-1].split(",")[0].lower()
+    return f"sn_{slug}@salesnav.local"
