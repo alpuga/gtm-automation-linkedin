@@ -58,7 +58,7 @@ CONNECT_NOTE = (
 CONNECT_NOTES = {
     # Economic buyer — ROI and risk framing
     "md_partner": (
-        "Hi {first_name}, building AI-powered infrastructure for deal sourcing teams. "
+        "Hi {first_name}, building AI-native compliance infrastructure for deal sourcing teams. "
         "Most platforms miss the TCPA exposure in this workflow, thought it worth "
         "connecting given your work at your firm."
     ),
@@ -70,25 +70,25 @@ CONNECT_NOTES = {
     ),
     # Gatekeeper — speak their language directly
     "gc_compliance": (
-        "Hi {first_name}, building AI-powered infrastructure for deal sourcing teams. "
+        "Hi {first_name}, building AI-native compliance infrastructure for deal sourcing teams. "
         "TCPA exposure in this workflow is real and most platforms don't address it, "
         "thought it relevant given your role at your firm."
     ),
     # Budget approver — efficiency framing
     "coo_cfo": (
-        "Hi {first_name}, building AI-powered infrastructure for deal sourcing teams. "
+        "Hi {first_name}, building AI-native compliance infrastructure for deal sourcing teams. "
         "Most platforms miss the TCPA exposure in this workflow, thought it worth "
         "connecting given your role at your firm."
     ),
     # PE/family office doing proprietary deal sourcing or LP outreach
     "pe_allocator": (
-        "Hi {first_name}, building AI-powered infrastructure for deal sourcing and "
+        "Hi {first_name}, building AI-native infrastructure for deal sourcing and "
         "LP outreach teams. Most platforms miss the TCPA exposure in this workflow, "
         "thought it worth connecting given your work at your firm."
     ),
     # Adjacent / referral — short, no pitch
     "other": (
-        "Hi {first_name}, building AI-powered infrastructure for deal sourcing teams. "
+        "Hi {first_name}, building AI-native infrastructure for deal sourcing teams. "
         "Relevant space to yours, thought it worth connecting."
     ),
 }
